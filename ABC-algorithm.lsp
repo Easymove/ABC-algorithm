@@ -12,8 +12,7 @@
                       0))
          (base (abs l-bound))
          (max (- u-bound l-bound)))
-    (- (/ (random (* max 1000000000))
-          1000000000)
+    (- (random (coerce max 'double-float))
        base)))
 
 (defun get-random-list (n &rest params)
@@ -45,8 +44,9 @@
               :initarg :max-trial
               :initform nil)
    (fitness :reader bcs-fitness
-            :initarg :fitness-func
-            :initform (constantly nil))))
+            :initarg :fitness-func)
+   (stop :reader bcs-stop
+         :initarg :stop)))
 
 (defvar *abc-spec* nil)
 
@@ -143,7 +143,11 @@
                        (setf (b-pos (aref population i)) (onlooker-solution))
                        (setf (b-trial (aref population i)) 0)))))
 
-      (loop for i from 0 to 1000 do (%iterate)))
+      (let ((i 0))
+        (loop while (not (funcall (bcs-stop *abc-spec*) i))
+           do (progn
+                (%iterate)
+                (incf i)))))
 
     ;; return best solution
     (let ((top-bee (aref (sort population #'> :key #'get-fitness) 0)))
@@ -170,7 +174,8 @@
                                                   :func func
                                                   :value-gen val-gen)
                              :bees-count sn-count
-                             :fitness-func fitness-func)))
+                             :fitness-func fitness-func
+                             :stop (lambda (iter) (> iter 600)))))
 
 (defparameter *all-runs* (make-hash-table :test #'equal))
 (defparameter *debug* t)
@@ -186,7 +191,7 @@
                0))))
      (setf (gethash (string ',name) *all-runs*) #',name)))
 
-(def-run sphere-run (&optional (sn-count 200))
+(def-run sphere-run (&optional (sn-count 100))
   (abc-search-aux #'sphere
                   (lambda () (map 'vector #'identity (get-random-list 10 -100 100)))
                   sn-count
@@ -214,4 +219,4 @@
      (setf (gethash (string ',name) *all-tests*) #',name)))
 
 (def-test sphere-test ()
-  (test-aux (sphere-run 100)))
+  (test-aux (sphere-run 150)))
