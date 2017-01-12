@@ -1,5 +1,8 @@
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (ql:quickload "cl-binary"))
+
 (defpackage :cl-abc
-  (:use :common-lisp))
+  (:use :common-lisp :cl-binary))
 
 (in-package :cl-abc)
 
@@ -154,6 +157,46 @@
       (values (b-pos top-bee) (get-value top-bee)))))
 
 
+;;; dots parse/dump -----------------------------------------------------
+(defclass RGB-spec ()
+  ((alpha :accessor alpha
+          :initarg :alpha
+          :initform 1)
+   (red :accessor red
+        :initarg :red
+        :initform 0)
+   (green :accessor green
+          :initarg :green
+          :initform 0)
+   (blue :accessor blue
+         :initarg :blue
+         :initform 0)))
+
+(defclass point ()
+  ((RGB-spec :accessor point-rgb
+             :initarg :rgb
+             :initform (make-instance 'RGB-spec))
+   (x :accessor point-x
+      :initarg :x
+      :initform 0)
+   (y :accessor point-y
+      :initarg :y
+      :initform 0)
+   (is-centroid :accessor is-centroid
+                :initarg :is-centroid
+                :initform 0)))
+
+(defun read-point (stream)
+  (format t "~%1: ~A~%2: ~A~%" (read-f64 stream) (read-f64 stream)))
+
+(defun read-points (file)
+  (with-open-file (stream file
+                          :direction :input
+                          :element-type '(unsigned-byte 8))
+    (read-point stream)))
+
+(read-points "/home/easymove/projects/AI_labs/RGR/Rings_5.dat")
+
 ;;; tested functions ----------------------------------------------------
 (defun min-fitness-func (func &rest args)
   (let ((val (apply func args)))
@@ -175,7 +218,7 @@
                                                   :value-gen val-gen)
                              :bees-count sn-count
                              :fitness-func fitness-func
-                             :stop (lambda (iter) (> iter 600)))))
+                             :stop (lambda (iter) (> iter 200)))))
 
 (defparameter *all-runs* (make-hash-table :test #'equal))
 (defparameter *debug* t)
@@ -219,4 +262,4 @@
      (setf (gethash (string ',name) *all-tests*) #',name)))
 
 (def-test sphere-test ()
-  (test-aux (sphere-run 150)))
+  (test-aux (sphere-run 50)))
