@@ -1,8 +1,10 @@
 (eval-when (:compile-toplevel :load-toplevel :execute)
-  (ql:quickload "cl-binary"))
+  (ql:quickload "ieee-floats")
+  (ql:quickload "cl-binary")
+  (ql:quickload "anaphora"))
 
 (defpackage :cl-abc
-  (:use :common-lisp :cl-binary))
+  (:use :common-lisp :ieee-floats :cl-binary :anaphora))
 
 (in-package :cl-abc)
 
@@ -52,6 +54,7 @@
          :initarg :stop)))
 
 (defvar *abc-spec* nil)
+(defparameter *best-ever* nil)
 
 ;;; main functions ------------------------------------------------------
 (defgeneric get-fitness (bee))
@@ -116,6 +119,7 @@
 
 (defun abc-search (bc-spec)
   (let* ((*abc-spec* (initialize-abc bc-spec))
+         (*best-ever* (onlooker-solution))
          (population (coerce
                       (loop for i from 0 to (1- (bcs-bcount *abc-spec*))
                          collect (make-instance
@@ -143,18 +147,23 @@
                ;; replace abandoned solutions
                (loop for i from 0 to (1- (length population))
                   do (when (> (b-trial (aref population i)) (bcs-max-trial *abc-spec*))
+                       (when (> (get-fitness (aref population i)) (get-fitness *best-ever*))
+                         (setf *best-ever* (b-pos (aref population i))))
                        (setf (b-pos (aref population i)) (onlooker-solution))
                        (setf (b-trial (aref population i)) 0)))))
 
       (let ((i 0))
         (loop while (not (funcall (bcs-stop *abc-spec*) i))
-           do (progn
-                (%iterate)
-                (incf i)))))
+           do (progn (%iterate)
+                     (incf i)))))
 
     ;; return best solution
-    (let ((top-bee (aref (sort population #'> :key #'get-fitness) 0)))
-      (values (b-pos top-bee) (get-value top-bee)))))
+    (let* ((top-bee (aref (sort population #'> :key #'get-fitness) 0))
+           (res (if (> (get-fitness *best-ever*) (get-fitness top-bee))
+                    (make-instance 'bee
+                                   :pos *best-ever*)
+                    top-bee)))
+      (values (b-pos res) (get-value res)))))
 
 
 ;;; dots parse/dump -----------------------------------------------------
@@ -186,16 +195,63 @@
                 :initarg :is-centroid
                 :initform 0)))
 
+(defmethod print-object ((p point) stream)
+  (format stream "#<POINT ~A; ~A (~A; ~A; ~A) is-centroid: ~A>"
+          (point-x p) (point-y p)
+          (red (point-rgb p)) (green (point-rgb p)) (blue (point-rgb p))
+          (is-centroid p)))
+
+(defun bits-int (bit-vector)
+  "Create a positive integer from a bit-vector."
+  (reduce #'(lambda (first-bit second-bit)
+              (+ (* first-bit 2) second-bit))
+          bit-vector))
+
+(defun int-bits (integer &key size rev)
+  "Create a bit-vector from a positive integer."
+  (labels ((integer->bit-list (int &optional accum)
+             (cond ((> int 0)
+                    (multiple-value-bind (i r) (truncate int 2)
+                      (integer->bit-list i (push r accum))))
+                   ((null accum) (push 0 accum))
+                   (t accum))))
+    (let* ((bitarr (integer->bit-list integer))
+           (out (or (and size
+                         (append (make-list (- size (length bitarr))
+                                            :initial-element 0)
+                                 bitarr))
+                    bitarr)))
+      (coerce (or (and rev (reverse out)) out) 'bit-vector))))
+
+(defun read-double (stream)
+  (aand (read-u64 stream) (decode-float64 it)))
+
+
 (defun read-point (stream)
-  (format t "~%1: ~A~%2: ~A~%" (read-f64 stream) (read-f64 stream)))
+  (let ((x (read-double stream))
+        (y (read-double stream))
+        (alpha (read-u32 stream))
+        (r (read-u32 stream))
+        (g (read-u32 stream))
+        (b (read-u32 stream))
+        (cnt (read-u32 stream)))
+    (when (and x y alpha r g b cnt)
+      (make-instance 'point
+                     :x x :y y
+                     :is-centroid cnt
+                     :rgb (make-instance 'RGB-spec
+                                         :alpha alpha
+                                         :red r
+                                         :green g
+                                         :blue b)))))
 
 (defun read-points (file)
   (with-open-file (stream file
                           :direction :input
                           :element-type '(unsigned-byte 8))
-    (read-point stream)))
-
-(read-points "/home/easymove/projects/AI_labs/RGR/Rings_5.dat")
+    (loop for point = (read-point stream)
+       while point
+       collect point)))
 
 ;;; tested functions ----------------------------------------------------
 (defun min-fitness-func (func &rest args)
@@ -236,7 +292,7 @@
 
 (def-run sphere-run (&optional (sn-count 100))
   (abc-search-aux #'sphere
-                  (lambda () (map 'vector #'identity (get-random-list 10 -100 100)))
+                  (lambda () (map 'vector #'identity (get-random-list 5 -100 100)))
                   sn-count
                   (lambda (&rest args) (apply #'min-fitness-func #'sphere args))))
 
